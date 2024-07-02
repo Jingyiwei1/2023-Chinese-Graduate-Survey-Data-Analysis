@@ -1,0 +1,174 @@
+## Data Cleaning
+# Install and load necessary packages
+install.packages("readxl")
+install.packages("tidyverse")
+install.packages("writexl")
+
+library(readxl)
+library(tidyverse)
+library(writexl)
+
+# Read the raw data
+data <- read_excel("C:/Users/Administrator/Desktop/Case study麦可思/data.xlsx")
+student_info <- read_excel("C:/Users/Administrator/Desktop/Case study麦可思/student_info.xlsx")
+
+# Merge data with student information
+data <- left_join(data, student_info, by = c("serialno" = "student_id"))
+
+# Remove samples from the class of 2022
+data <- data %>% filter(graduation_year != 2022)
+
+# Check if 2022 samples are completely removed
+remaining_2022 <- data %>% filter(graduation_year == 2022)
+print(remaining_2022)
+# A tibble: 0 × 9
+# 9 variables: serialno <dbl>, area_code <dbl>, current_status <chr>,
+# problem_solving <chr>, teamwork <chr>, communication <chr>, college <chr>, major <chr>, graduation_year <dbl>
+
+# Rename columns and clean options for single-choice questions
+data <- data %>%
+  rename(Current_Status = current_status) %>%
+  mutate(
+    Current_Status = recode(Current_Status,
+                            `1` = "Employed",
+                            `2` = "Further Study",
+                            `3` = "Unemployed, Seeking Job",
+                            `4` = "Unemployed, Preparing for Study",
+                            `5` = "Prefer not to disclose")
+  )
+
+# Replace variable names for multiple-choice questions and clean options
+data <- data %>%
+  rename(
+    Problem_Solving = problem_solving,
+    Teamwork = teamwork,
+    Communication = communication
+  ) %>%
+  mutate(across(c(Problem_Solving, Teamwork, Communication), ~ ifelse(!is.na(.), 1, 0)))
+
+# Export the cleaned dataset
+write_xlsx(data, "data/cleaned_data.xlsx")
+
+## Data Analysis
+# Load necessary packages
+library(readxl)
+library(tidyverse)
+library(writexl)
+library(ggplot2)
+library(scales)
+
+# Read the cleaned data
+data <- read_excel("data/cleaned_data.xlsx")
+
+# 1. Number of samples collected from each college
+samples_per_college <- data %>%
+  group_by(College) %>%
+  summarize(Sample_Count = n())
+print(samples_per_college)
+
+# 2. Relationship between colleges and majors
+college_major_relation <- data %>%
+  select(College, Major) %>%
+  distinct()
+print(college_major_relation)
+
+# 3. Employment and further study rates
+employment_rate <- data %>%
+  filter(Current_Status != "Prefer not to disclose") %>%
+  summarize(
+    Employment_Rate = mean(Current_Status == "Employed"),
+    Further_Study_Rate = mean(Current_Status == "Further Study")
+  )
+print(employment_rate)
+
+# 4. College where problem-solving skills have improved the most
+improved_college <- data %>%
+  group_by(College) %>%
+  summarize(
+    Problem_Solving_Improvement = mean(Problem_Solving, na.rm = TRUE)
+  ) %>%
+  arrange(desc(Problem_Solving_Improvement))
+print(improved_college)
+
+# Additional Analysis
+# Employment and further study rates by major
+major_employment_rate <- data %>%
+  filter(Current_Status != "Prefer not to disclose") %>%
+  group_by(Major) %>%
+  summarize(
+    Employment_Rate = mean(Current_Status == "Employed"),
+    Further_Study_Rate = mean(Current_Status == "Further Study")
+  )
+
+# Top 5 majors by employment rate
+top5_employment_rate <- major_employment_rate %>%
+  arrange(desc(Employment_Rate)) %>%
+  top_n(5, Employment_Rate)
+print(top5_employment_rate)
+
+# Top 5 majors by further study rate
+top5_graduation_rate <- major_employment_rate %>%
+  arrange(desc(Further_Study_Rate)) %>%
+  top_n(5, Further_Study_Rate)
+print(top5_graduation_rate)
+
+# Plot: Top 5 majors by employment rate
+ggplot(top5_employment_rate, aes(x = reorder(Major, -Employment_Rate), y = Employment_Rate)) +
+  geom_bar(stat = "identity", fill = "steelblue", width = 0.5) +
+  geom_text(aes(label = scales::percent(Employment_Rate, accuracy = 0.1)), vjust = -0.5, color = "black") +
+  labs(
+    title = "Top 5 Majors by Employment Rate",
+    x = "Major",
+    y = "Employment Rate"
+  ) +
+  theme_minimal()
+
+# Plot: Top 5 majors by further study rate
+ggplot(top5_graduation_rate, aes(x = reorder(Major, -Further_Study_Rate), y = Further_Study_Rate)) +
+  geom_bar(stat = "identity", fill = "steelblue", width = 0.5) +
+  geom_text(aes(label = scales::percent(Further_Study_Rate, accuracy = 0.1)), vjust = -0.5, color = "black") +
+  labs(
+    title = "Top 5 Majors by Further Study Rate",
+    x = "Major",
+    y = "Further Study Rate"
+  ) +
+  theme_minimal()
+
+# Employment and further study rates by college
+college_employment_rate <- data %>%
+  filter(Current_Status != "Prefer not to disclose") %>%
+  group_by(College) %>%
+  summarize(
+    Employment_Rate = mean(Current_Status == "Employed"),
+    Further_Study_Rate = mean(Current_Status == "Further Study")
+  )
+print(college_employment_rate)
+
+# Transform data for dual bar chart
+college_employment_rate_long <- college_employment_rate %>%
+  pivot_longer(cols = c("Employment_Rate", "Further_Study_Rate"), names_to = "Indicator", values_to = "Percentage")
+
+# Plot: Employment and further study rates by college
+ggplot(college_employment_rate_long, aes(x = reorder(College, -Percentage), y = Percentage, fill = Indicator)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7), width = 0.6) +
+  geom_text(aes(label = scales::percent(Percentage, accuracy = 0.1)), 
+            position = position_dodge(width = 0.7), vjust = -0.5, color = "black", size = 3) +  # Adjust font size
+  labs(
+    title = "Employment and Further Study Rates by College",
+    x = "College",
+    y = "Percentage",
+    fill = "Indicator"
+  ) +
+  scale_fill_manual(values = c("Employment_Rate" = "lightgray", "Further_Study_Rate" = "steelblue")) +  # Light gray and steel blue
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 10),  # Adjust title font size
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 8),  # Adjust X-axis labels font size
+    axis.text.y = element_text(size = 8),  # Adjust Y-axis labels font size
+    axis.title = element_text(size = 10),  # Adjust axis titles font size
+    legend.title = element_text(size = 10),  # Adjust legend title font size
+    legend.text = element_text(size = 8),  # Adjust legend text font size
+    panel.grid = element_blank(),  # Remove background grid
+    axis.line = element_line(color = "black", size = 0.5, arrow = arrow(type = "closed", length = unit(0.15, "inches")))
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05)))
